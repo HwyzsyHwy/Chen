@@ -1,0 +1,15 @@
+plotly==5.9.0
+seaborn==0.11.2
+shap==0.41.0
+scikit-learn==1.5.2
+catboost>=1.2.7
+xgboost>=1.7.0
+catboost>=1.1.0
+pandas
+numpy
+streamlit
+matplotlib
+pillow
+openpyxl
+
+
