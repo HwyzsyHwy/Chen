@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 """Organic Biomass HTC Multi-Product Forecaster"""
-import streamlit as st, numpy as np, os, joblib, base64, urllib.request, pathlib, pandas as pd
+import streamlit as st
+import numpy as np
+import os
+import joblib
+import base64
+import urllib.request
+import pathlib
+import pandas as pd
 
 st.set_page_config(page_title="HTC Forecaster", page_icon="🌿",
                    layout="wide", initial_sidebar_state="collapsed")
