@@ -1,5 +1,25 @@
 # -*- coding: utf-8 -*-
 """Organic Biomass HTC Multi-Product Forecaster"""
+import sys, types
+
+# ── sklearn 版本兼容 shim ──
+# pkl 用旧版 sklearn（<=1.3）保存，内含 sklearn.ensemble._gb_losses 引用
+# sklearn 1.4+ 移除了该模块，需创建 stub 让 pickle 反序列化成功
+if "sklearn.ensemble._gb_losses" not in sys.modules:
+    try:
+        from sklearn.ensemble import _gb_losses  # noqa: F401
+    except ImportError:
+        # 创建 stub 模块，包含旧版序列化所需的 loss 类
+        _stub = types.ModuleType("sklearn.ensemble._gb_losses")
+        # sklearn 1.3 中 _gb_losses 定义了这些类（GBDT 回归常用 LeastSquaresError）
+        try:
+            from sklearn._loss.loss import HalfSquaredError as _LSE
+            _stub.LeastSquaresError = _LSE
+        except ImportError:
+            pass
+        # 注册到 sys.modules，pickle 反序列化时即可找到
+        sys.modules["sklearn.ensemble._gb_losses"] = _stub
+
 import streamlit as st, numpy as np, os, joblib, base64, urllib.request, pathlib, pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
