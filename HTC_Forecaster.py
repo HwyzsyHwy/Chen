@@ -85,14 +85,13 @@ def _load_type_info(target):
     feature_cols : 特征列名列表（已去掉目标列，含 Type）
     若下载失败/文件损坏，返回 ([], {}, []) 让上层使用 fallback。
     """
-    xlsx, _, ycol = TARGET_CFG[target]
+    xlsx, ycol, _ = TARGET_CFG[target]
     local = _ensure_file(xlsx)
     if not local.exists() or local.stat().st_size < 5000:
         return [], {}, []
     try:
         df = pd.read_excel(str(local))
     except Exception:
-        # 文件损坏（很可能是下载到了 HTML 错误页）→ 删除并返回空
         try:
             local.unlink()
         except Exception:
@@ -104,6 +103,48 @@ def _load_type_info(target):
     mapping = {c: i + 1 for i, c in enumerate(cats)}
     feat_cols = [c for c in df.columns if c != ycol]
     return cats, mapping, feat_cols
+
+
+@st.cache_resource(show_spinner="Training model...")
+def _train_model(target):
+    """
+    按照模型训练代码完全一致的流程，在线训练 GBDT 模型并缓存。
+    流程：加载数据 → Type编码 → 划分(test_size=0.2, random_state=52)
+         → 缺失值填充(仅用训练集中位数) → StandardScaler + GBDT Pipeline → fit
+    """
+    xlsx, ycol, fill_col = TARGET_CFG[target]
+    local = _ensure_file(xlsx)
+    df = pd.read_excel(str(local))
+
+    X = df.drop(ycol, axis=1)
+    y = df[ycol]
+
+    # Type 编码（与训练代码完全一致：dict.fromkeys保持首次出现顺序，从1开始）
+    categories = list(dict.fromkeys(X['Type']))
+    type_mapping = {cat: idx + 1 for idx, cat in enumerate(categories)}
+    X = X.copy()
+    X['Type'] = X['Type'].map(type_mapping)
+
+    # 划分（与训练代码完全一致）
+    X_train_val, X_test, y_train_val, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=RANDOM_STATE
+    )
+
+    # 缺失值填充（与训练代码完全一致：仅用训练集中位数）
+    if fill_col:
+        fill_median = X_train_val[fill_col].median()
+        X_train_val = X_train_val.copy()
+        X_train_val[fill_col] = X_train_val[fill_col].fillna(fill_median)
+
+    # 训练 Pipeline（与训练代码完全一致：StandardScaler + GradientBoostingRegressor）
+    model = Pipeline([
+        ('pre', StandardScaler()),
+        ('reg', GradientBoostingRegressor(random_state=RANDOM_STATE))
+    ])
+    model.fit(X_train_val, y_train_val)
+
+    # 返回模型和缺失值填充中位数
+    return model, (fill_median if fill_col else None)
 
 # ────────────────── CSS ──────────────────
 st.markdown(f"""<style>
@@ -891,7 +932,7 @@ if reset_clicked:
 
 if run_clicked:
     cur_target = st.session_state.target
-    xlsx_name, model_prefix, ycol = TARGET_CFG[cur_target]
+    xlsx_name, ycol, fill_col = TARGET_CFG[cur_target]
 
     # ① Type 验证
     if biomass_type not in _type_map:
@@ -900,9 +941,8 @@ if run_clicked:
                  f"Valid Types: {', '.join(_type_map.keys())}")
     else:
         # ② 构建特征行（列名 & 顺序与模型训练代码完全一致）
-        # 训练代码中：Type → dict.fromkeys 顺序编码（从1开始），其余列名即Excel原始列名
         all_vals = {
-            "Type": float(_type_map[biomass_type]),   # 数值编码，从 1 开始
+            "Type": float(_type_map[biomass_type]),
             "T": temp, "RT": time_, "SLR": ratio, "Cycles": float(cycles),
             "C": el_C, "H": el_H, "O": el_O, "N": el_N, "S": el_S,
             "Protein": pr_Protein, "Lipid": pr_Lipid, "CHO": pr_CHO,
@@ -920,20 +960,11 @@ if run_clicked:
         else:
             features = pd.DataFrame([all_vals])
 
-        # ③ 查找并加载模型 & 预测
-        model_file = _find_model_file(model_prefix)
-        model_path = _APP_DIR / model_file
-        if not model_path.exists():
-            _ensure_file(model_file)   # 尝试从 GitHub 下载
-
-        if model_path.exists():
-            try:
-                model = joblib.load(str(model_path))
-                pred = float(model.predict(features)[0])
-                st.session_state.result = pred
-                st.rerun()
-            except Exception as e:
-                st.error(f"Prediction error: {e}")
-        else:
-            st.warning(f"Model file not found: {model_file}. "
-                       f"Please place it in {_APP_DIR}")
+        # ③ 在线训练模型 & 预测（完全复现训练代码流程，避免pkl版本不兼容）
+        try:
+            model, _ = _train_model(cur_target)
+            pred = float(model.predict(features)[0])
+            st.session_state.result = pred
+            st.rerun()
+        except Exception as e:
+            st.error(f"Prediction error: {e}")
