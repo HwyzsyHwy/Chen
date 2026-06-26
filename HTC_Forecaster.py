@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """Organic Biomass HTC Multi-Product Forecaster"""
 import streamlit as st, numpy as np, os, joblib, base64, urllib.request, pathlib, pandas as pd
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
 
 st.set_page_config(page_title="HTC Forecaster", page_icon="🌿",
                    layout="wide", initial_sidebar_state="collapsed")
@@ -48,22 +52,15 @@ _MIRRORS = [_GH_RAW,
             "https://ghproxy.net/" + _GH_RAW,
             "https://cdn.jsdelivr.net/gh/HwyzsyHwy/Chen@main/"]
 
-# 各目标 → (训练数据文件, 模型文件前缀, 目标列名)
+# 各目标 → (训练数据文件, 目标列名, 缺失值填充列)
+# HC: 无缺失值填充; AP: RT列中位数填充; CDs: SLR列中位数填充
 TARGET_CFG = {
-    "Hydrochar Yield":   ("HC20260413.xlsx",  "HC_Yield",  "Yield"),
-    "Aqueous phase TN":  ("AP20260413.xlsx",  "AP_TN",     "TN"),
-    "QY of carbon dots": ("CDs20260413.xlsx", "CDs_QY",    "QY"),
+    "Hydrochar Yield":   ("HC20260413.xlsx",  "Yield", None),
+    "Aqueous phase TN":  ("AP20260413.xlsx",  "TN",    "RT"),
+    "QY of carbon dots": ("CDs20260413.xlsx", "QY",    "SLR"),
 }
 
-def _find_model_file(prefix):
-    """按模型训练代码的命名规则搜索 pkl 文件: {prefix}_{ModelName}_best_model.pkl"""
-    import glob
-    pattern = str(_APP_DIR / f"{prefix}_*_best_model.pkl")
-    found = glob.glob(pattern)
-    if found:
-        return pathlib.Path(found[0]).name
-    # fallback: 尝试从 GitHub 下载 GBDT 版本
-    return f"{prefix}_GBDT_best_model.pkl"
+RANDOM_STATE = 52  # 与训练代码完全一致
 
 def _ensure_file(fname):
     """下载文件到 _APP_DIR，已存在则跳过"""
