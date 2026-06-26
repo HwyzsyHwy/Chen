@@ -1,6 +1,8 @@
-streamlit
-numpy
-pandas
-scikit-learn
-openpyxl
-joblib
+# 固定为已验证在 Python 3.14 上有 wheel 且能成功安装的版本（来自部署日志）
+streamlit==1.58.0
+numpy==2.5.0
+pandas==3.0.3
+scikit-learn==1.9.0
+scipy==1.18.0
+openpyxl==3.1.5
+joblib==1.5.3
