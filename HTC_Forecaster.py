@@ -1,25 +1,5 @@
 # -*- coding: utf-8 -*-
 """Organic Biomass HTC Multi-Product Forecaster"""
-import sys, types
-
-# ── sklearn 版本兼容 shim ──
-# pkl 用旧版 sklearn（<=1.3）保存，内含 sklearn.ensemble._gb_losses 引用
-# sklearn 1.4+ 移除了该模块，需创建 stub 让 pickle 反序列化成功
-if "sklearn.ensemble._gb_losses" not in sys.modules:
-    try:
-        from sklearn.ensemble import _gb_losses  # noqa: F401
-    except ImportError:
-        # 创建 stub 模块，包含旧版序列化所需的 loss 类
-        _stub = types.ModuleType("sklearn.ensemble._gb_losses")
-        # sklearn 1.3 中 _gb_losses 定义了这些类（GBDT 回归常用 LeastSquaresError）
-        try:
-            from sklearn._loss.loss import HalfSquaredError as _LSE
-            _stub.LeastSquaresError = _LSE
-        except ImportError:
-            pass
-        # 注册到 sys.modules，pickle 反序列化时即可找到
-        sys.modules["sklearn.ensemble._gb_losses"] = _stub
-
 import streamlit as st, numpy as np, os, joblib, base64, urllib.request, pathlib, pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
@@ -72,11 +52,34 @@ _MIRRORS = [_GH_RAW,
             "https://ghproxy.net/" + _GH_RAW,
             "https://cdn.jsdelivr.net/gh/HwyzsyHwy/Chen@main/"]
 
-# 各目标 → (训练数据文件, 目标列名, 缺失值填充列, pkl模型文件)
+# 各目标 → (训练数据文件, 目标列名, 缺失值填充列)
 TARGET_CFG = {
-    "Hydrochar Yield":   ("HC20260413.xlsx",  "Yield", None,  "HC_Yield_GBDT_best_model.pkl"),
-    "Aqueous phase TN":  ("AP20260413.xlsx",  "TN",    "RT",  "AP_TN_GBDT_best_model.pkl"),
-    "QY of carbon dots": ("CDs20260413.xlsx", "QY",    "SLR", "CDs_QY_GBDT_best_model.pkl"),
+    "Hydrochar Yield":   ("HC20260413.xlsx",  "Yield", None),
+    "Aqueous phase TN":  ("AP20260413.xlsx",  "TN",    "RT"),
+    "QY of carbon dots": ("CDs20260413.xlsx", "QY",    "SLR"),
+}
+
+# 各目标的 Optuna 最优 GBDT 超参数（从训练好的 pkl 提取，确保结果完全复现）
+# 运行时用这些参数 + 相同数据 + random_state=52 重新 fit，避免 pkl 跨版本不兼容
+BEST_PARAMS = {
+    "Hydrochar Yield": {
+        'learning_rate': 0.03171056050165454, 'n_estimators': 999, 'max_depth': 9,
+        'max_features': 0.31790759710843447, 'min_samples_leaf': 5, 'min_samples_split': 11,
+        'subsample': 0.6727173636587855, 'loss': 'squared_error', 'criterion': 'friedman_mse',
+        'random_state': 52,
+    },
+    "Aqueous phase TN": {
+        'learning_rate': 0.047965328015306556, 'n_estimators': 610, 'max_depth': 10,
+        'max_features': 0.30154515202377924, 'min_samples_leaf': 2, 'min_samples_split': 2,
+        'subsample': 0.7523432597240091, 'loss': 'squared_error', 'criterion': 'friedman_mse',
+        'random_state': 52,
+    },
+    "QY of carbon dots": {
+        'learning_rate': 0.02008815155266471, 'n_estimators': 641, 'max_depth': 5,
+        'max_features': 0.632781916203825, 'min_samples_leaf': 1, 'min_samples_split': 12,
+        'subsample': 0.9087096825400937, 'loss': 'squared_error', 'criterion': 'friedman_mse',
+        'random_state': 52,
+    },
 }
 
 RANDOM_STATE = 52  # 与训练代码完全一致
@@ -104,7 +107,7 @@ def _load_type_info(target):
     feature_cols : 特征列名列表（已去掉目标列，含 Type）
     若下载失败/文件损坏，返回 ([], {}, []) 让上层使用 fallback。
     """
-    xlsx, ycol, _, _ = TARGET_CFG[target]
+    xlsx, ycol, _ = TARGET_CFG[target]
     local = _ensure_file(xlsx)
     if not local.exists() or local.stat().st_size < 5000:
         return [], {}, []
@@ -130,7 +133,7 @@ def _load_feature_stats(target):
     返回各数值特征的 {col: (min, max, median)} 字典，用于设置输入框范围和默认值。
     统计基于整个数据集（与训练代码一致：用户看到的是原始数据范围）。
     """
-    xlsx, ycol, _, _ = TARGET_CFG[target]
+    xlsx, ycol, _ = TARGET_CFG[target]
     local = _ensure_file(xlsx)
     if not local.exists() or local.stat().st_size < 5000:
         return {}
@@ -152,26 +155,44 @@ def _load_feature_stats(target):
 @st.cache_resource(show_spinner="Loading model...")
 def _load_model(target):
     """
-    直接加载已训练好的 Optuna 优化 GBDT pkl 模型。
-    同时计算缺失值填充中位数（与训练流程一致）。
+    用 Optuna 最优超参数重新训练 GBDT，完全复现训练好的优化模型。
+    流程与训练代码完全一致：加载数据 → Type编码 → 划分(test_size=0.2, seed=52)
+         → 缺失值填充(仅用训练集中位数) → StandardScaler + GBDT(最优参数) Pipeline → fit
+    用参数重训而非加载 pkl，彻底避免 sklearn 跨版本不兼容问题。
+    返回 (model, fill_median)。
     """
-    xlsx, ycol, fill_col, pkl_name = TARGET_CFG[target]
-    # 下载并加载 pkl
-    pkl_local = _ensure_file(pkl_name)
-    model = joblib.load(str(pkl_local))
+    xlsx, ycol, fill_col = TARGET_CFG[target]
+    local = _ensure_file(xlsx)
+    df = pd.read_excel(str(local))
 
-    # 计算缺失值填充中位数（与训练代码一致：仅用训练集中位数）
+    X = df.drop(ycol, axis=1)
+    y = df[ycol]
+
+    # Type 编码（与训练代码完全一致）
+    categories = list(dict.fromkeys(X['Type']))
+    type_mapping = {cat: idx + 1 for idx, cat in enumerate(categories)}
+    X = X.copy()
+    X['Type'] = X['Type'].map(type_mapping)
+
+    # 划分（与训练代码完全一致）
+    X_train_val, X_test, y_train_val, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=RANDOM_STATE
+    )
+
+    # 缺失值填充（与训练代码完全一致：仅用训练集中位数）
     fill_median = None
     if fill_col:
-        data_local = _ensure_file(xlsx)
-        df = pd.read_excel(str(data_local))
-        X = df.drop(ycol, axis=1)
-        categories = list(dict.fromkeys(X['Type']))
-        type_mapping = {cat: idx + 1 for idx, cat in enumerate(categories)}
-        X = X.copy()
-        X['Type'] = X['Type'].map(type_mapping)
-        X_train_val, _, _, _ = train_test_split(X, df[ycol], test_size=0.2, random_state=RANDOM_STATE)
         fill_median = X_train_val[fill_col].median()
+        X_train_val = X_train_val.copy()
+        X_train_val[fill_col] = X_train_val[fill_col].fillna(fill_median)
+
+    # 用 Optuna 最优超参数构建 GBDT Pipeline 并训练
+    params = BEST_PARAMS[target]
+    model = Pipeline([
+        ('pre', StandardScaler()),
+        ('reg', GradientBoostingRegressor(**params))
+    ])
+    model.fit(X_train_val, y_train_val)
 
     return model, fill_median
 
@@ -958,7 +979,7 @@ if reset_clicked:
 
 if run_clicked:
     cur_target = st.session_state.target
-    xlsx_name, ycol, fill_col, pkl_name = TARGET_CFG[cur_target]
+    xlsx_name, ycol, fill_col = TARGET_CFG[cur_target]
 
     # ① Type 验证
     if biomass_type not in _type_map:
