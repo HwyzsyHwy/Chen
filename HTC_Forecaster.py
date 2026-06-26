@@ -1,13 +1,6 @@
 # -*- coding: utf-8 -*-
 """Organic Biomass HTC Multi-Product Forecaster"""
-import streamlit as st
-import numpy as np
-import os
-import joblib
-import base64
-import urllib.request
-import pathlib
-import pandas as pd
+import streamlit as st, numpy as np, os, joblib, base64, urllib.request, pathlib, pandas as pd
 
 st.set_page_config(page_title="HTC Forecaster", page_icon="🌿",
                    layout="wide", initial_sidebar_state="collapsed")
@@ -162,7 +155,7 @@ button[data-testid="stBaseButton-secondary"],
 button[data-testid="stBaseButton-primary"],
 button[kind="secondary"],button[kind="primary"]{{
   font-family:'Times New Roman',Times,serif!important;
-  font-size:44px!important;font-weight:700!important;color:#fff!important;
+  font-size:28px!important;font-weight:700!important;color:#fff!important;
   border:none!important;border-radius:10px!important;
   padding:6px 10px!important;min-height:auto!important;
   line-height:1.2!important;
@@ -171,7 +164,7 @@ button[kind="secondary"],button[kind="primary"]{{
 /* secondary 按钮内的 p 标签也要改字号 */
 button[data-testid="stBaseButton-secondary"] p,
 button[data-testid="stBaseButton-primary"] p{{
-  font-size:44px!important;font-family:'Times New Roman',Times,serif!important;
+  font-size:28px!important;font-family:'Times New Roman',Times,serif!important;
   font-weight:700!important;margin:0!important;line-height:1.2!important;
 }}
 /* 未选中（secondary）= 深蓝 */
@@ -184,39 +177,70 @@ button[data-testid="stBaseButton-primary"]{{
   box-shadow:0 4px 16px rgba(192,57,43,.35)!important;
 }}
 
-/* fieldset look */
-.fs{{border:2px solid #c0392b;border-radius:10px;padding:18px 14px 10px;
-     position:relative;margin-bottom:10px}}
-.fs.org{{border-color:#d4880f}}
-.fs.dk{{border-color:#2c3e50}}
-.fs.navy{{border-color:#1b2a4a}}
-.lg{{position:absolute;top:-11px;left:14px;background:#fff;padding:0 7px;
-    font-weight:700;font-size:12.5px;color:#c0392b}}
-.lg.org{{color:#d4880f}}
-.lg.dk{{color:#2c3e50}}
+/* ============ FIELDSET — 全部由JS处理，CSS只保留辅助样式 ============ */
+/* 强制清除所有 BorderWrapper 的 Streamlit 默认边框 */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+  border:none!important;box-shadow:none!important;
+  background:transparent!important;overflow:visible!important;
+  padding:0!important;margin:0!important;
+}}
 
-/* input row */
-.irow{{display:flex;align-items:center;margin:5px 0;gap:6px}}
-.irow .lab{{min-width:52px;font-weight:700;font-size:13px;color:#333}}
-.irow .unit{{font-size:12px;color:#666;min-width:32px}}
+/* --- label / unit cells --- */
+.lab-cell{{font-family:'Times New Roman',Times,serif;font-weight:700;
+           font-size:28px;display:flex!important;align-items:center!important;
+           min-height:44px!important;padding-left:4px}}
+.unit-cell{{font-family:'Times New Roman',Times,serif;font-size:28px;
+            display:flex!important;align-items:center!important;
+            min-height:44px!important;padding-left:6px}}
 
-/* prediction */
-.pred-box{{border:2px solid #1b2a4a;border-radius:12px;padding:22px 18px 18px;
-           position:relative;margin-top:14px}}
-.pred-lg{{position:absolute;top:-12px;left:50%;transform:translateX(-50%);
-          background:#fff;padding:0 10px;font-weight:700;font-size:14px;color:#2c3e50}}
-.pred-val{{background:#2d2d5e;color:#fff;border-radius:8px;padding:22px 18px;
-           font-size:20px;font-weight:600;min-height:70px;display:flex;align-items:center}}
+/* 每行垂直居中 — 用后代选择符，不用 > */
+[data-testid="stHorizontalBlock"]{{
+  display:flex!important;align-items:center!important;
+}}
+[data-testid="stColumn"]{{
+  display:flex!important;flex-direction:column!important;
+  justify-content:center!important;align-self:center!important;
+  padding-top:2px!important;padding-bottom:2px!important;
+}}
+/* stNumberInput 和 stSelectbox 容器也垂直居中 */
+[data-testid="stNumberInput"],[data-testid="stSelectbox"]{{
+  display:flex!important;flex-direction:column!important;justify-content:center!important;
+}}
 
-/* force light theme on all inputs */
-[data-testid="stNumberInput"] input{{border:2px solid #e8a030!important;border-radius:6px!important;
-  background:#fff!important;color:#222!important}}
-[data-testid="stTextInput"] input{{border:2px solid #e8a030!important;border-radius:6px!important;
-  background:#fff!important;color:#222!important}}
-[data-testid="stSelectbox"] > div > div{{border:2px solid #e8a030!important;border-radius:6px!important;
-  background:#fff!important;color:#222!important}}
-/* all labels dark */
-label, [data-testid="stWidgetLabel"]{{color:#333!important}}
+/* ★ 只清除内层，不清除 [data-baseweb="input"]（由JS加彩色边框） */
+[data-baseweb="base-input"],
+[data-baseweb="input-container"],
+[data-baseweb="form-control"]{{
+  border:none!important;box-shadow:none!important;background:transparent!important;
+}}
+[data-baseweb="input-adjoin"]{{display:none!important;}}
+[data-baseweb="select"] div,[data-baseweb="select"]>div{{
+  border:none!important;box-shadow:none!important;
+}}
+
+/* 隐藏 number_input 的 +/- 按钮 */
+[data-testid="stNumberInput"] button{{display:none!important}}
+[data-testid="stNumberInput"]>div{{
+  border-radius:8px!important;box-sizing:border-box!important;
+  margin-left:0!important;padding-left:0!important;
+}}
+[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+[data-testid="stNumberInput"]>div{{
+  display:flex!important;align-items:center!important;min-height:44px!important;
+}}
+[data-testid="stNumberInput"] input{{
+  font-family:'Times New Roman',Times,serif!important;
+  font-size:22px!important;padding:8px 12px!important;
+  background:transparent!important;color:#222!important;
+  width:100%!important;flex:1!important;
+}}
+[data-testid="stSelectbox"] [data-baseweb="select"] > div{{
+  font-family:'Times New Roman',Times,serif!important;
+  font-size:22px!important;min-height:44px!important;
+  background:#fff!important;color:#222!important;
+  width:100%!important;box-sizing:border-box!important;
+}}
+label,[data-testid="stWidgetLabel"]{{color:#333!important}}
 
 /* ── Target Selection 框和 legend ── */
 /* 匹配所有可能的容器标记方式 */
@@ -224,21 +248,77 @@ div[data-testid="stHorizontalBlock"][data-ts-styled],
 div[data-testid="stHorizontalBlock"].ts-box,
 div[data-testid="stHorizontalBlock"].ts-container{{
   border:2px solid #1b2a4a!important;border-radius:12px!important;
-  padding:30px 18px 14px!important;position:relative!important;
+  padding:30px 0px 14px!important;position:relative!important;
   margin-bottom:14px!important;overflow:visible!important;
+  display:flex!important;justify-content:center!important;
+  align-items:center!important;gap:20px!important;
+}}
+/* 容器内每列等宽居中 */
+div[data-testid="stHorizontalBlock"][data-ts-styled] > div[data-testid="stColumn"],
+div[data-testid="stHorizontalBlock"].ts-box > div[data-testid="stColumn"],
+div[data-testid="stHorizontalBlock"].ts-container > div[data-testid="stColumn"]{{
+  display:flex!important;justify-content:center!important;
+  flex:1 1 0!important;
 }}
 /* 匹配旧JS创建的无class span + 新JS创建的span */
 div[data-testid="stHorizontalBlock"][data-ts-styled] > span,
 div[data-testid="stHorizontalBlock"].ts-box > span,
 div[data-testid="stHorizontalBlock"].ts-container > span{{
   position:absolute!important;top:-18px!important;left:50%!important;
-  transform:translateX(-50%)!important;background:#fff!important;
+  transform:translateX(-50%)!important;background:var(--background-color,#fff)!important;
   padding:0 14px!important;font-family:'Times New Roman',Times,serif!important;
   font-weight:700!important;font-size:33px!important;color:#1b2a4a!important;
   white-space:nowrap!important;z-index:10!important;line-height:1.1!important;
 }}
 
 /* run / reset — 由 JS 定位 */
+.pred-outer{{
+  position:relative;border:3px solid #1b2a4a;border-radius:14px;
+  padding:20px 20px 16px;margin-top:18px;
+}}
+.pred-legend{{
+  position:absolute;top:-20px;left:50%;transform:translateX(-50%);
+  background:#fff;padding:0 14px;
+  font-family:'Times New Roman',Times,serif;font-weight:700;
+  font-size:30px;color:#1b2a4a;white-space:nowrap;z-index:10;
+}}
+.pred-left{{
+  background:#1b2a4a;border-radius:10px;
+  padding:12px 20px 12px 250px;display:flex;align-items:center;gap:12px;
+  box-sizing:border-box;align-self:stretch;
+  border:none!important;outline:none!important;
+}}
+.pred-label{{
+  font-family:'Times New Roman',Times,serif;font-weight:700;
+  font-size:32px;color:#fff;white-space:nowrap;
+}}
+.pred-value{{
+  font-family:'Times New Roman',Times,serif;font-weight:700;
+  font-size:32px;color:#fff;
+}}
+/* Prediction外框标题 */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.pred-marker){{
+  position:relative!important;overflow:visible!important;
+}}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.pred-marker)::before{{
+  content:'Prediction';
+  position:absolute;top:-18px;left:50%;transform:translateX(-50%);
+  background:#fff;padding:0 14px;
+  font-family:'Times New Roman',Times,serif;font-weight:700;
+  font-size:30px;color:#1b2a4a;white-space:nowrap;z-index:10;line-height:1.5;
+}}
+.pred-outer button:first-of-type{{
+  background:#4995AD!important;color:#fff!important;
+  font-family:'Times New Roman',Times,serif!important;
+  font-size:20px!important;font-weight:700!important;
+  border:none!important;border-radius:8px!important;
+}}
+.pred-outer button:last-of-type{{
+  background:linear-gradient(135deg,#e8a030,#d4880f)!important;color:#fff!important;
+  font-family:'Times New Roman',Times,serif!important;
+  font-size:20px!important;font-weight:700!important;
+  border:none!important;border-radius:8px!important;
+}}
 
 /* hide label for compact inputs */
 .compact-input label{{display:none!important}}
@@ -273,25 +353,30 @@ function applyStyles() {
           el = el.parentElement;
         }
         if (tgtBlock) {
-          /* 只加类名，框+legend全靠CSS ::before 控制 */
           tgtBlock.classList.add('ts-box');
-          /* 删除所有旧的JS创建的legend span */
+          /* 如果容器内还没有 legend span，就创建一个 */
+          let hasLegend = false;
           tgtBlock.querySelectorAll('span').forEach(s => {
-            if ((s.textContent || '').trim() === 'Target Selection') s.remove();
+            if ((s.textContent || '').trim() === 'Target Selection') hasLegend = true;
           });
+          if (!hasLegend) {
+            const legend = P.createElement('span');
+            legend.textContent = 'Target Selection';
+            tgtBlock.insertBefore(legend, tgtBlock.firstChild);
+          }
         }
       }
       /* ── 按钮样式 ── */
       const kind = b.getAttribute('kind');
       Object.assign(b.style, {
         fontFamily: "'Times New Roman', Times, serif",
-        fontSize: "44px", fontWeight: "700", color: "#fff",
+        fontSize: "28px", fontWeight: "700", color: "#fff",
         border: "none", borderRadius: "10px",
         padding: "6px 10px", minHeight: "auto", lineHeight: "1.2",
-        transition: "all .25s ease", width: "100%"
+        transition: "all .25s ease", width: "75%", margin: "0 auto", display: "block"
       });
       const p = b.querySelector('p');
-      if (p) { p.style.fontSize = "44px"; p.style.fontFamily = "'Times New Roman', Times, serif"; p.style.fontWeight = "700"; p.style.margin = "0"; p.style.lineHeight = "1.2"; }
+      if (p) { p.style.fontSize = "28px"; p.style.fontFamily = "'Times New Roman', Times, serif"; p.style.fontWeight = "700"; p.style.margin = "0"; p.style.lineHeight = "1.2"; }
       if (kind === "primary") {
         b.style.background = "#c0392b";
         b.style.boxShadow = "0 4px 16px rgba(192,57,43,.35)";
@@ -301,29 +386,335 @@ function applyStyles() {
       }
     }
     if (txt === "Run Prediction") {
-      Object.assign(b.style, {
-        background: "#3a8a8a", color: "#fff", border: "none",
-        borderRadius: "8px", fontSize: "15px", fontWeight: "700",
-        padding: "12px", width: "100%", minHeight: "auto",
-        boxShadow: "none", fontFamily: "'Times New Roman', Times, serif"
-      });
+      b.style.setProperty('background','linear-gradient(135deg,#2e8b9a,#5bb8c4)','important');
+      b.style.setProperty('color','#fff','important');
+      b.style.setProperty('border','none','important');
+      b.style.setProperty('border-radius','8px','important');
+      b.style.setProperty('font-size','22px','important');
+      b.style.setProperty('font-weight','700','important');
+      b.style.setProperty('font-family',"'Times New Roman',Times,serif",'important');
     }
-    if (txt === "Reset") {
-      Object.assign(b.style, {
-        background: "linear-gradient(135deg,#e8a030,#d4880f)",
-        color: "#fff", border: "none", borderRadius: "8px",
-        fontSize: "15px", fontWeight: "700", padding: "12px",
-        width: "100%", minHeight: "auto", boxShadow: "none",
-        fontFamily: "'Times New Roman', Times, serif"
+    if (txt === "Reset Inputs") {
+      b.style.setProperty('background','linear-gradient(135deg,#e8a030,#f0c060)','important');
+      b.style.setProperty('color','#fff','important');
+      b.style.setProperty('border','none','important');
+      b.style.setProperty('border-radius','8px','important');
+      b.style.setProperty('font-size','22px','important');
+      b.style.setProperty('font-weight','700','important');
+      b.style.setProperty('font-family',"'Times New Roman',Times,serif",'important');
+      b.style.setProperty('margin-top','12px','important');
+    }
+  });
+
+  /* ── fieldset：从 lab-cell 向上找容器 ── */
+  const FS_MAP = [
+    {marker:'Type',  label:'Categorical Variable',            color:'#c0392b'},
+    {marker:'T',     label:'Reaction Condition Parameters',   color:'#1b2a4a'},
+    {marker:'C',     label:'Elemental Analysis',              color:'#F08F3E'},
+    {marker:'Protein', label:'Proximate Analysis',            color:'#d4880f'},
+    {marker:'FC',    label:'Biochemical Composition Analysis',color:'#4995AD'},
+  ];
+  const labCells = P.querySelectorAll('.lab-cell');
+  console.log('[HTC-FS] lab-cells:', labCells.length);
+  /* 调试：打印第一个 lab-cell 的所有祖先 testid */
+  if (labCells.length > 0) {
+    let dbg = [], c = labCells[0];
+    for (let i=0; i<20; i++) { c=c.parentElement; if(!c||c===P.body) break; dbg.push((c.getAttribute('data-testid')||'?')+'['+c.tagName+']'); }
+    console.log('[HTC-FS] ancestors:', dbg.join(' > '));
+  }
+  /* ── 注入 <style> 到 head 末尾 ── */
+  let _ks = P.getElementById('htc-kill-style');
+  if (!_ks) { _ks=P.createElement('style'); _ks.id='htc-kill-style'; P.head.appendChild(_ks); }
+  _ks.textContent = `
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.lab-cell){border:none!important;box-shadow:none!important;padding:0!important;margin:0!important;background:transparent!important;overflow:visible!important;}
+    [data-baseweb="input"],[data-baseweb="base-input"],[data-baseweb="input-container"]{border:none!important;box-shadow:none!important;background:transparent!important;}
+    [data-baseweb="input-adjoin"]{display:none!important;}
+    [data-baseweb="select"]>div{border:none!important;box-shadow:none!important;}
+    [data-testid="stWidgetLabel"]{display:none!important;}
+    [data-testid="stNumberInput"],[data-testid="stSelectbox"]{margin:0!important;}
+    [data-testid="stHorizontalBlock"]{display:flex!important;align-items:center!important;margin:2px 0!important;}
+    [data-testid="stColumn"]{align-self:center!important;}
+    .lab-cell,.unit-cell{display:flex!important;align-items:center!important;min-height:44px!important;}
+    [data-testid="stVerticalBlock"]{gap:0!important;}
+    [data-testid="stVerticalBlock"]>.element-container{margin-top:0!important;margin-bottom:0!important;padding-top:0!important;padding-bottom:0!important;}
+    .pred-left hr,.pred-marker hr{display:none!important;}
+    .pred-left .element-container,.pred-marker .element-container{border:none!important;box-shadow:none!important;}
+    .pred-marker *{border-top:none!important;border-bottom:none!important;box-shadow:none!important;}
+    [data-testid="stMarkdownContainer"]{border:none!important;border-bottom:none!important;}
+    .pred-marker [data-testid="stMarkdownContainer"]{border:none!important;border-bottom:none!important;box-shadow:none!important;}
+    .pred-marker p,.pred-marker span,.pred-marker div{border:none!important;border-bottom:none!important;}
+    .pred-left,.pred-left *,.pred-marker,.pred-marker *{border-bottom:none!important;border-top:none!important;}
+  `;
+
+  const seen = new Set();
+  labCells.forEach(cell => {
+    const txt = (cell.textContent||'').trim();
+    const m = FS_MAP.find(x => x.marker === txt);
+    if (!m) return;
+    /* 向上找：先找到任意 stVerticalBlock，再继续往上找包含它的 stVerticalBlock（即外层容器） */
+    let inner = null, wrapper = null, cur = cell;
+    for (let i=0; i<20; i++) {
+      cur = cur.parentElement;
+      if (!cur || cur === P.body) break;
+      const tid = cur.getAttribute('data-testid')||'';
+      if (tid === 'stVerticalBlock') {
+        if (!inner) { inner = cur; }
+        else { wrapper = cur; break; }
+      }
+    }
+    if (!wrapper) wrapper = inner;
+    if (!wrapper || seen.has(wrapper)) return;
+    seen.add(wrapper);
+
+    /* 强制清除 BorderWrapper 的 Streamlit 原始边框（用 setProperty 才能覆盖） */
+    let bw = wrapper.parentElement;
+    for (let i=0; i<8; i++) {
+      if (!bw || bw===P.body) break;
+      const tid = bw.getAttribute('data-testid')||'';
+      if (tid.includes('BorderWrapper') || tid.includes('stVerticalBlock')) {
+        ['border','box-shadow','padding','background'].forEach(p=>
+          bw.style.setProperty(p, p==='background'?'transparent':'none', 'important')
+        );
+        bw.style.setProperty('overflow','visible','important');
+      }
+      bw = bw.parentElement;
+    }
+
+    /* 内层容器：彩色边框，中列padding-top 48px，其余28px */
+    const isMiddle = (m.marker === 'C');
+    const isSecondRight = (m.marker === 'FC');
+    const isT = (m.marker === 'T');
+    const ptop = isMiddle ? '82px' : (isT ? '52px' : '28px');
+    const isFirst = (m.marker === 'Type' || m.marker === 'C' || m.marker === 'Protein');
+    const mtop = isSecondRight ? '15px' : (isFirst ? '10px' : '38px');
+    const pbot = isMiddle ? '80px' : '12px';
+    ['border','border-radius','position','overflow','padding',
+     'margin-top','margin-bottom','background','box-sizing'].forEach((p,i)=>{
+      const vals=['3px solid '+m.color,'14px','relative','visible',
+                  ptop+' 12px '+pbot, mtop,'10px','transparent','border-box'];
+      wrapper.style.setProperty(p, vals[i], 'important');
+    });
+
+    /* 浮动标题：背景#fff遮断框线 */
+    let span = wrapper.querySelector('.fs-span');
+    if (!span) { span=P.createElement('span'); span.className='fs-span'; wrapper.insertBefore(span,wrapper.firstChild); }
+    span.textContent = m.label;
+    [['position','absolute'],['top','-18px'],['left','50%'],
+     ['transform','translateX(-50%)'],['background','#ffffff'],
+     ['color',m.color],['padding','0 10px'],['font-size','26px'],
+     ['font-weight','700'],['font-family',"'Times New Roman',Times,serif"],
+     ['white-space','nowrap'],['z-index','10'],['line-height','1.5'],
+     ['border-radius','0']].forEach(([p,v])=>span.style.setProperty(p,v,'important'));
+
+  /* ── 全局扫描所有 stNumberInput，找同行 lab-cell 确定颜色，加彩色边框 ── */
+  const COLOR_MAP = {
+    'Type':'#c0392b','T':'#1b2a4a','RT':'#1b2a4a','SLR':'#1b2a4a','Cycles':'#1b2a4a',
+    'C':'#F08F3E','H':'#F08F3E','O':'#F08F3E','N':'#F08F3E','S':'#F08F3E',
+    'M':'#2c3e50','Ash':'#2c3e50','VM':'#2c3e50','FC':'#2c3e50',
+    'Protein':'#d4880f','Lipid':'#d4880f','CHO':'#d4880f',
+    'FC':'#4995AD','VM':'#4995AD','Ash':'#4995AD',
+  };
+  /* 清除所有 input 内层边框 */
+  P.querySelectorAll('[data-baseweb="input"],[data-baseweb="base-input"]').forEach(el=>{
+    el.style.setProperty('border','none','important');
+    el.style.setProperty('box-shadow','none','important');
+    el.style.setProperty('background','transparent','important');
+  });
+  P.querySelectorAll('[data-baseweb="input-adjoin"]').forEach(el=>{
+    el.style.setProperty('display','none','important');
+  });
+  /* 对每个 stNumberInput，找同行 lab-cell 文字，加对应颜色边框 */
+  P.querySelectorAll('[data-testid="stNumberInput"]').forEach(ni=>{
+    /* 向上找 stHorizontalBlock */
+    let row=ni;
+    for(let i=0;i<10;i++){
+      row=row.parentElement;
+      if(!row||row===P.body) break;
+      if((row.getAttribute('data-testid')||'')==='stHorizontalBlock') break;
+    }
+    if(!row) return;
+    /* 在同行找 lab-cell 文字 */
+    const lc=row.querySelector('.lab-cell');
+    const txt=lc?(lc.textContent||'').trim():'';
+    const color=COLOR_MAP[txt]||'#888';
+    /* lab-cell 和 unit-cell 字体颜色 */
+    if(lc) lc.style.setProperty('color',color,'important');
+    const uc=row.querySelector('.unit-cell');
+    if(uc) uc.style.setProperty('color',color,'important');
+    /* stNumberInput 直接子div加彩色边框 */
+    ni.querySelectorAll('[data-baseweb="input-adjoin"]').forEach(el=>{
+      el.style.setProperty('display','none','important');
+    });
+    const firstDiv = ni.querySelector(':scope > div');
+    if(firstDiv){
+      const selDiv = P.querySelector('[data-testid="stSelectbox"] [data-baseweb="select"]>div');
+      const refW = selDiv ? selDiv.getBoundingClientRect().width : 0;
+      if(refW>0) firstDiv.style.setProperty('width', refW+'px','important');
+      /* 基准：Food waste框左边缘的绝对x坐标 */
+      const refLeft = selDiv ? selDiv.getBoundingClientRect().left : 0;
+      /* 当前number_input框左边缘的绝对x坐标 */
+      const curLeft = firstDiv.getBoundingClientRect().left;
+      /* 找到包含firstDiv的stColumn，调整padding-left对齐 */
+      if(refLeft>0 && curLeft !== refLeft){
+        let col=ni;
+        for(let i=0;i<8;i++){col=col.parentElement;if(!col||col===P.body)break;if((col.getAttribute('data-testid')||'')==='stColumn')break;}
+        if(col&&(col.getAttribute('data-testid')||'')==='stColumn'){
+          const curPL=parseFloat(getComputedStyle(col).paddingLeft)||0;
+          const diff=curLeft-refLeft;
+          col.style.setProperty('padding-left',Math.max(0,curPL-diff)+'px','important');
+        }
+      }
+      firstDiv.style.setProperty('border','2px solid '+color,'important');
+      firstDiv.style.setProperty('border-radius','8px','important');
+      firstDiv.style.setProperty('box-shadow','none','important');
+      firstDiv.style.setProperty('background','#fff','important');
+    }
+    ni.querySelectorAll('[data-baseweb="input"],[data-baseweb="base-input"]').forEach(el=>{
+      el.style.setProperty('border','none','important');
+      el.style.setProperty('box-shadow','none','important');
+      el.style.setProperty('background','transparent','important');
+    });
+  });
+  /* selectbox: 从 lab-cell 找同行 select>div 加彩色边框 */
+  P.querySelectorAll('.lab-cell').forEach(cell=>{
+    const txt=(cell.textContent||'').trim();
+    const color=COLOR_MAP[txt];
+    if(!color) return;
+    cell.style.setProperty('color',color,'important');
+    let row=cell;
+    for(let i=0;i<10;i++){
+      row=row.parentElement;
+      if(!row||row===P.body) break;
+      if((row.getAttribute('data-testid')||'')==='stHorizontalBlock') break;
+    }
+    if(!row) return;
+    const uc=row.querySelector('.unit-cell');
+    if(uc) uc.style.setProperty('color',color,'important');
+    row.querySelectorAll('[data-baseweb="select"]>div').forEach(el=>{
+      el.style.setProperty('border','2px solid '+color,'important');
+      el.style.setProperty('border-radius','8px','important');
+      el.style.setProperty('box-shadow','none','important');
+    });
+  });
+
+    /* 每行垂直居中，不改宽度 */
+    wrapper.querySelectorAll('[data-testid="stHorizontalBlock"]').forEach(row=>{
+      row.style.setProperty('display','flex','important');
+      row.style.setProperty('align-items','center','important');
+      row.querySelectorAll('[data-testid="stColumn"]').forEach(col=>{
+        col.style.setProperty('align-self','center','important');
       });
+    });
+    console.log('[HTC-FS] styled:', m.label);
+  });
+}
+function equalizeColumns() {
+  let mainHB = null;
+  P.querySelectorAll('[data-testid="stHorizontalBlock"]').forEach(hb => {
+    const texts = Array.from(hb.querySelectorAll('.lab-cell')).map(c=>(c.textContent||'').trim());
+    if (texts.includes('Type') && texts.includes('C') && texts.includes('FC')) mainHB = hb;
+  });
+  if (!mainHB) return;
+  mainHB.style.setProperty('align-items','flex-start','important');
+
+  /* 收集三列的 stVerticalBlock */
+  const vbs = [];
+  Array.from(mainHB.children).forEach(col => {
+    if ((col.getAttribute('data-testid')||'') !== 'stColumn') return;
+    const vb = col.querySelector('[data-testid="stVerticalBlock"]');
+    if (!vb) return;
+    /* 清除旧 spacer */
+    const old = vb.querySelector('.htc-eq-spacer');
+    if (old) old.remove();
+    vbs.push(vb);
+  });
+  if (vbs.length < 2) return;
+
+  /* 实测各列内容高度，找最大值 */
+  const heights = vbs.map(vb => vb.getBoundingClientRect().height);
+  const maxH = Math.max(...heights);
+
+  /* 给高度不足的列底部补 spacer */
+  vbs.forEach((vb, i) => {
+    const diff = maxH - heights[i];
+    if (diff > 2) {
+      const sp = P.createElement('div');
+      sp.className = 'htc-eq-spacer';
+      sp.style.cssText = 'height:' + diff + 'px;flex-shrink:0;';
+      vb.appendChild(sp);
     }
   });
 }
-setTimeout(applyStyles, 300);
-setTimeout(applyStyles, 800);
-setTimeout(applyStyles, 1500);
-setTimeout(applyStyles, 3000);
-P._htcObs = new MutationObserver(() => { setTimeout(applyStyles, 50); });
+function resetAndApply() {
+  P.querySelectorAll('[data-fs-styled]').forEach(el => delete el.dataset.fsStyled);
+  applyStyles();
+  stylePredTitle();
+}
+function stylePredTitle() {
+  const pm = P.querySelector('.pred-marker');
+  if (!pm) return;
+  /* 找包含pred-marker的stHorizontalBlock，再往上一层stVerticalBlock */
+  let bw = null, cur = pm;
+  for (let i=0; i<20; i++) {
+    cur = cur.parentElement;
+    if (!cur || cur===P.body) break;
+    if ((cur.getAttribute('data-testid')||'')==='stHorizontalBlock') {
+      /* 再往上找stVerticalBlock */
+      let p2 = cur.parentElement;
+      for (let j=0; j<5; j++) {
+        if (!p2||p2===P.body) break;
+        if ((p2.getAttribute('data-testid')||'')==='stVerticalBlock') { bw=p2; break; }
+        p2=p2.parentElement;
+      }
+      /* 对齐左侧色块与右侧按钮顶部 */
+      const cols = Array.from(cur.querySelectorAll(':scope > [data-testid="stColumn"]'));
+      if (cols.length >= 2) {
+        const leftTop = cols[0].getBoundingClientRect().top;
+        const rightTop = cols[1].getBoundingClientRect().top;
+        const rightH = cols[1].getBoundingClientRect().height;
+        const diff = rightTop - leftTop;
+        if (rightH > 10) pm.style.setProperty('height', rightH+'px', 'important');
+        if (Math.abs(diff) > 1) pm.style.setProperty('margin-top', diff+'px', 'important');
+      }
+      break;
+    }
+  }
+  if (!bw) return;
+  /* 清除pred-marker所有祖先的border-bottom直到bw */
+  let up = pm.parentElement;
+  while (up && up !== bw) {
+    up.style.setProperty('border-bottom','none','important');
+    up.style.setProperty('border-top','none','important');
+    up.style.setProperty('box-shadow','none','important');
+    up = up.parentElement;
+  }
+  ['border','border-radius','position','overflow','padding','margin-top']
+    .forEach((p,i)=>bw.style.setProperty(p,
+      ['3px solid #1b2a4a','14px','relative','visible','28px 16px 16px','18px'][i],'important'));
+  if (bw.querySelector('.pred-legend-span')) return;
+  const leg=P.createElement('span');
+  leg.className='pred-legend-span';
+  leg.textContent='Prediction';
+  [['position','absolute'],['top','-18px'],['left','50%'],['transform','translateX(-50%)'],
+   ['background','#fff'],['color','#1b2a4a'],['padding','0 14px'],['font-size','30px'],
+   ['font-weight','700'],['font-family',"'Times New Roman',Times,serif"],
+   ['white-space','nowrap'],['z-index','10'],['line-height','1.5']]
+    .forEach(([p,v])=>leg.style.setProperty(p,v,'important'));
+  bw.insertBefore(leg,bw.firstChild);
+}
+setTimeout(applyStyles, 200);
+setTimeout(applyStyles, 600);
+setTimeout(applyStyles, 1200);
+setTimeout(applyStyles, 2500);
+setTimeout(stylePredTitle, 800);
+setTimeout(stylePredTitle, 1600);
+setTimeout(equalizeColumns, 400);
+setTimeout(equalizeColumns, 800);
+setTimeout(equalizeColumns, 1600);
+setTimeout(equalizeColumns, 3000);
+let _iv = setInterval(resetAndApply, 2000);
+setTimeout(() => clearInterval(_iv), 60000);
+P._htcObs = new MutationObserver(() => { setTimeout(applyStyles, 100); });
 P._htcObs.observe(P.body, {childList:true, subtree:true});
 </script>
 """, height=0)
@@ -358,75 +749,133 @@ if not _type_list:
                   "Crop straw","Woody biomass","Algae","Other"]
     _type_map  = {c: i+1 for i,c in enumerate(_type_list)}
 
-col_L, col_M, col_R = st.columns(3)
+st.markdown('<div style="margin-top:1px"></div>', unsafe_allow_html=True)
+col_L, _g1, col_M, _g2, col_R = st.columns([0.25, 0.05, 0.25, 0.05, 0.25])
 
 # ===== LEFT COLUMN =====
 with col_L:
-    # -- Categorical Variable --
-    st.markdown('<div class="fs"><span class="lg">Categorical Variable</span>', unsafe_allow_html=True)
-    biomass_type = st.selectbox("Type", _type_list, label_visibility="collapsed")
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c:
+            st.markdown('<div class="lab-cell" style="margin-top:-16px">Type</div>', unsafe_allow_html=True)
+        with in_c:
+            biomass_type = st.selectbox("Type", _type_list, label_visibility="collapsed")
+        with u_c:
+            st.markdown('<div class="unit-cell" style="margin-top:-16px"></div>', unsafe_allow_html=True)
 
-    # -- Reaction Condition Parameters --
-    st.markdown('<div class="fs org"><span class="lg org">Reaction Condition Parameters</span>', unsafe_allow_html=True)
-    temp  = st.number_input("Temperature (°C)", min_value=100.0, max_value=400.0, value=220.0, step=5.0, format="%.1f")
-    time_ = st.number_input("Time (min)",       min_value=1.0,   max_value=1440.0, value=60.0,  step=5.0, format="%.1f")
-    ratio = st.number_input("Solid-liquid ratio",min_value=0.01, max_value=1.0,    value=0.10,  step=0.01, format="%.2f")
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div style="margin-top:16px"></div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">T</div>', unsafe_allow_html=True)
+        with in_c:  temp = st.number_input("T", min_value=100.0, max_value=400.0, value=220.0, step=5.0, format="%.1f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">°C</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">RT</div>', unsafe_allow_html=True)
+        with in_c:  time_ = st.number_input("RT", min_value=1.0, max_value=1440.0, value=60.0, step=5.0, format="%.1f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">h</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">SLR</div>', unsafe_allow_html=True)
+        with in_c:  ratio = st.number_input("SLR", min_value=0.01, max_value=1.0, value=0.10, step=0.01, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">%</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">Cycles</div>', unsafe_allow_html=True)
+        with in_c:  cycles = st.number_input("Cycles", min_value=1, max_value=100, value=1, step=1, format="%d", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">times</div>', unsafe_allow_html=True)
 
 # ===== MIDDLE COLUMN =====
 with col_M:
-    st.markdown('<div class="fs org"><span class="lg org">Elemental Analysis</span>', unsafe_allow_html=True)
-    el_C = st.number_input("C (%)", min_value=0.0, max_value=100.0, value=45.0, step=0.1, format="%.2f")
-    el_H = st.number_input("H (%)", min_value=0.0, max_value=100.0, value=6.0,  step=0.1, format="%.2f")
-    el_O = st.number_input("O (%)", min_value=0.0, max_value=100.0, value=40.0, step=0.1, format="%.2f")
-    el_N = st.number_input("N (%)", min_value=0.0, max_value=100.0, value=2.0,  step=0.1, format="%.2f")
-    el_S = st.number_input("S (%)", min_value=0.0, max_value=100.0, value=0.5,  step=0.1, format="%.2f")
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">C</div>', unsafe_allow_html=True)
+        with in_c:  el_C = st.number_input("C", min_value=0.0, max_value=100.0, value=45.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">H</div>', unsafe_allow_html=True)
+        with in_c:  el_H = st.number_input("H", min_value=0.0, max_value=100.0, value=6.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">O</div>', unsafe_allow_html=True)
+        with in_c:  el_O = st.number_input("O", min_value=0.0, max_value=100.0, value=40.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">N</div>', unsafe_allow_html=True)
+        with in_c:  el_N = st.number_input("N", min_value=0.0, max_value=100.0, value=2.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">S</div>', unsafe_allow_html=True)
+        with in_c:  el_S = st.number_input("S", min_value=0.0, max_value=100.0, value=0.5, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
 
 # ===== RIGHT COLUMN =====
 with col_R:
-    # -- Proximate Analysis --
-    st.markdown('<div class="fs dk"><span class="lg dk">Proximate Analysis</span>', unsafe_allow_html=True)
-    pr_M   = st.number_input("Moisture (%)",         min_value=0.0, max_value=100.0, value=8.0,  step=0.1, format="%.2f")
-    pr_Ash = st.number_input("Ash (%)",              min_value=0.0, max_value=100.0, value=10.0, step=0.1, format="%.2f")
-    pr_VM  = st.number_input("Volatile matter (%)",  min_value=0.0, max_value=100.0, value=65.0, step=0.1, format="%.2f")
-    pr_FC  = st.number_input("Fixed carbon (%)",     min_value=0.0, max_value=100.0, value=17.0, step=0.1, format="%.2f")
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">Protein</div>', unsafe_allow_html=True)
+        with in_c:  pr_Protein = st.number_input("Protein", min_value=0.0, max_value=100.0, value=8.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
 
-    # -- Biochemical Composition --
-    st.markdown('<div class="fs dk"><span class="lg dk">Biochemical Composition Analysis</span>', unsafe_allow_html=True)
-    bc_CL = st.number_input("Cellulose (%)",      min_value=0.0, max_value=100.0, value=20.0, step=0.1, format="%.2f")
-    bc_HC = st.number_input("Hemicellulose (%)",   min_value=0.0, max_value=100.0, value=15.0, step=0.1, format="%.2f")
-    bc_LG = st.number_input("Lignin (%)",          min_value=0.0, max_value=100.0, value=10.0, step=0.1, format="%.2f")
-    bc_LP = st.number_input("Lipid (%)",           min_value=0.0, max_value=100.0, value=5.0,  step=0.1, format="%.2f")
-    bc_PR = st.number_input("Protein (%)",         min_value=0.0, max_value=100.0, value=8.0,  step=0.1, format="%.2f")
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">Lipid</div>', unsafe_allow_html=True)
+        with in_c:  pr_Lipid = st.number_input("Lipid", min_value=0.0, max_value=100.0, value=10.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">CHO</div>', unsafe_allow_html=True)
+        with in_c:  pr_CHO = st.number_input("CHO", min_value=0.0, max_value=100.0, value=65.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+
+    st.markdown('<div style="margin-top:15px"></div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">FC</div>', unsafe_allow_html=True)
+        with in_c:  bc_FC = st.number_input("FC", min_value=0.0, max_value=100.0, value=17.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">VM</div>', unsafe_allow_html=True)
+        with in_c:  bc_VM = st.number_input("VM", min_value=0.0, max_value=100.0, value=65.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">Ash</div>', unsafe_allow_html=True)
+        with in_c:  bc_Ash = st.number_input("Ash_bc", min_value=0.0, max_value=100.0, value=10.0, step=0.1, format="%.2f", label_visibility="collapsed")
+        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
 
 
 # ────────────────── PREDICTION SECTION ──────────────────
-st.markdown('<div class="pred-box"><span class="pred-lg">Prediction</span>', unsafe_allow_html=True)
-
-# result display
-if st.session_state.result is not None:
-    st.markdown(f'<div class="pred-val">{st.session_state.target}: {st.session_state.result:.4f}</div>',
-                unsafe_allow_html=True)
-else:
-    st.markdown('<div class="pred-val" style="color:#888;">Awaiting prediction…</div>',
-                unsafe_allow_html=True)
-
-# buttons
-btn_L, btn_R = st.columns(2)
-with btn_L:
-    st.markdown('<div class="run-btn">', unsafe_allow_html=True)
-    run_clicked = st.button("Run Prediction", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-with btn_R:
-    st.markdown('<div class="reset-btn">', unsafe_allow_html=True)
-    reset_clicked = st.button("Reset", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)
+with st.container(border=False):
+    pred_L, pred_R = st.columns([3, 1])
+    with pred_L:
+        if st.session_state.result is not None:
+            val = f"{st.session_state.target}: {st.session_state.result:.4f}"
+        else:
+            val = ""
+        st.markdown(f'''<div class="pred-left pred-marker">
+          <span class="pred-label">Predicted value:</span>
+          <span class="pred-value">{val}</span>
+        </div>''', unsafe_allow_html=True)
+    with pred_R:
+        run_clicked = st.button("Run Prediction", use_container_width=True)
+        st.markdown('<div style="margin-top:10px"></div>', unsafe_allow_html=True)
+        reset_clicked = st.button("Reset Inputs", use_container_width=True)
 
 # ────────────────── MODEL LOGIC ──────────────────
 if reset_clicked:
