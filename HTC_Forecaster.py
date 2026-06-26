@@ -105,6 +105,31 @@ def _load_type_info(target):
     return cats, mapping, feat_cols
 
 
+@st.cache_data(show_spinner=False)
+def _load_feature_stats(target):
+    """
+    返回各数值特征的 {col: (min, max, median)} 字典，用于设置输入框范围和默认值。
+    统计基于整个数据集（与训练代码一致：用户看到的是原始数据范围）。
+    """
+    xlsx, ycol, _ = TARGET_CFG[target]
+    local = _ensure_file(xlsx)
+    if not local.exists() or local.stat().st_size < 5000:
+        return {}
+    try:
+        df = pd.read_excel(str(local))
+    except Exception:
+        return {}
+    stats = {}
+    for col in df.columns:
+        if col == ycol or col == "Type":
+            continue
+        s = df[col].dropna()
+        if len(s) == 0:
+            continue
+        stats[col] = (float(s.min()), float(s.max()), float(s.median()))
+    return stats
+
+
 @st.cache_resource(show_spinner="Training model...")
 def _train_model(target):
     """
@@ -790,15 +815,70 @@ with tc3:
         st.session_state.target = "QY of carbon dots"; st.session_state.result = None; st.rerun()
 
 # ────────────────── INPUT AREA ──────────────────
-# 根据当前目标加载对应训练数据的 Type 列表
+# 根据当前目标加载对应训练数据的 Type 列表和特征统计
 _type_list, _type_map, _feat_cols = _load_type_info(st.session_state.target)
+_fstats = _load_feature_stats(st.session_state.target)
 if not _type_list:
     _type_list = ["Food waste","Sewage sludge","Livestock manure",
                   "Crop straw","Woody biomass","Algae","Other"]
     _type_map  = {c: i+1 for i,c in enumerate(_type_list)}
 
+# 单位映射
+_UNITS = {"T":"°C","RT":"h","SLR":"g/mL","Cycles":"times",
+           "C":"wt%","H":"wt%","O":"wt%","N":"wt%","S":"wt%",
+           "Protein":"wt%","Lipid":"wt%","CHO":"wt%",
+           "FC":"wt%","VM":"wt%","Ash":"wt%","M":"wt%"}
+
+def _get_stat(col):
+    """获取特征的 (min, max, median)，若无统计则返回合理默认值"""
+    if col in _fstats:
+        mn, mx, md = _fstats[col]
+        # 稍微放宽范围以允许轻微外推
+        return mn, mx, md
+    return 0.0, 100.0, 50.0
+
+def _render_num_input(col, key_suffix=""):
+    """渲染一行数值输入（label + input + unit），范围和默认值来自数据集"""
+    mn, mx, md = _get_stat(col)
+    unit = _UNITS.get(col, "")
+    # 判断是否为整数列
+    is_int = col == "Cycles"
+    lab_c, in_c, u_c = st.columns([1, 2, 0.6])
+    with lab_c:
+        st.markdown(f'<div class="lab-cell" style="margin-top:-16px">{col}</div>', unsafe_allow_html=True)
+    with in_c:
+        if is_int:
+            val = st.number_input(col, min_value=int(mn), max_value=int(mx),
+                                  value=int(md), step=1, format="%d",
+                                  label_visibility="collapsed", key=f"inp_{col}{key_suffix}")
+        else:
+            val = st.number_input(col, min_value=mn, max_value=mx,
+                                  value=md, step=(mx-mn)/100 if mx>mn else 0.1,
+                                  format="%.2f", label_visibility="collapsed",
+                                  key=f"inp_{col}{key_suffix}")
+    with u_c:
+        st.markdown(f'<div class="unit-cell" style="margin-top:-16px;padding-left:12px">{unit}</div>', unsafe_allow_html=True)
+    return val
+
 st.markdown('<div style="margin-top:1px"></div>', unsafe_allow_html=True)
 col_L, _g1, col_M, _g2, col_R = st.columns([0.25, 0.05, 0.25, 0.05, 0.25])
+
+# 按照训练代码的特征列顺序（_feat_cols），排除 Type 后分为三组
+_num_cols = [c for c in _feat_cols if c != "Type"]
+# 分组：左列=反应条件(T,RT,SLR,Cycles)，中列=元素分析(C,H,O,N,S)，
+#       右上=生化组成(Protein,Lipid,CHO)，右下=工业分析(FC,VM,Ash,M)
+_LEFT_COLS  = ["T","RT","SLR","Cycles"]
+_MID_COLS   = ["C","H","O","N","S"]
+_RIGHT_UP   = ["Protein","Lipid","CHO"]
+_RIGHT_DOWN = ["FC","VM","Ash","M"]
+
+# 只保留当前数据集实际存在的特征列
+_left  = [c for c in _LEFT_COLS if c in _num_cols]
+_mid   = [c for c in _MID_COLS if c in _num_cols]
+_rup   = [c for c in _RIGHT_UP if c in _num_cols]
+_rdown = [c for c in _RIGHT_DOWN if c in _num_cols]
+
+_input_vals = {}  # 收集所有输入值
 
 # ===== LEFT COLUMN =====
 with col_L:
@@ -811,101 +891,39 @@ with col_L:
         with u_c:
             st.markdown('<div class="unit-cell" style="margin-top:-16px"></div>', unsafe_allow_html=True)
 
-    st.markdown('<div style="margin-top:16px"></div>', unsafe_allow_html=True)
-    with st.container(border=True):
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">T</div>', unsafe_allow_html=True)
-        with in_c:  temp = st.number_input("T", min_value=100.0, max_value=400.0, value=220.0, step=5.0, format="%.1f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">°C</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">RT</div>', unsafe_allow_html=True)
-        with in_c:  time_ = st.number_input("RT", min_value=1.0, max_value=1440.0, value=60.0, step=5.0, format="%.1f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">h</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">SLR</div>', unsafe_allow_html=True)
-        with in_c:  ratio = st.number_input("SLR", min_value=0.01, max_value=1.0, value=0.10, step=0.01, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">%</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">Cycles</div>', unsafe_allow_html=True)
-        with in_c:  cycles = st.number_input("Cycles", min_value=1, max_value=100, value=1, step=1, format="%d", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">times</div>', unsafe_allow_html=True)
+    if _left:
+        st.markdown('<div style="margin-top:16px"></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            for i, col in enumerate(_left):
+                if i > 0:
+                    st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+                _input_vals[col] = _render_num_input(col)
 
 # ===== MIDDLE COLUMN =====
 with col_M:
-    with st.container(border=True):
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">C</div>', unsafe_allow_html=True)
-        with in_c:  el_C = st.number_input("C", min_value=0.0, max_value=100.0, value=45.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">H</div>', unsafe_allow_html=True)
-        with in_c:  el_H = st.number_input("H", min_value=0.0, max_value=100.0, value=6.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">O</div>', unsafe_allow_html=True)
-        with in_c:  el_O = st.number_input("O", min_value=0.0, max_value=100.0, value=40.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">N</div>', unsafe_allow_html=True)
-        with in_c:  el_N = st.number_input("N", min_value=0.0, max_value=100.0, value=2.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">S</div>', unsafe_allow_html=True)
-        with in_c:  el_S = st.number_input("S", min_value=0.0, max_value=100.0, value=0.5, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+    if _mid:
+        with st.container(border=True):
+            for i, col in enumerate(_mid):
+                if i > 0:
+                    st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+                _input_vals[col] = _render_num_input(col)
 
 # ===== RIGHT COLUMN =====
 with col_R:
-    with st.container(border=True):
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">Protein</div>', unsafe_allow_html=True)
-        with in_c:  pr_Protein = st.number_input("Protein", min_value=0.0, max_value=100.0, value=8.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+    if _rup:
+        with st.container(border=True):
+            for i, col in enumerate(_rup):
+                if i > 0:
+                    st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+                _input_vals[col] = _render_num_input(col)
 
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">Lipid</div>', unsafe_allow_html=True)
-        with in_c:  pr_Lipid = st.number_input("Lipid", min_value=0.0, max_value=100.0, value=10.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">CHO</div>', unsafe_allow_html=True)
-        with in_c:  pr_CHO = st.number_input("CHO", min_value=0.0, max_value=100.0, value=65.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
-
-    st.markdown('<div style="margin-top:15px"></div>', unsafe_allow_html=True)
-    with st.container(border=True):
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">FC</div>', unsafe_allow_html=True)
-        with in_c:  bc_FC = st.number_input("FC", min_value=0.0, max_value=100.0, value=17.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">VM</div>', unsafe_allow_html=True)
-        with in_c:  bc_VM = st.number_input("VM", min_value=0.0, max_value=100.0, value=65.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
-
-        st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
-        lab_c, in_c, u_c = st.columns([1, 2, 0.6])
-        with lab_c: st.markdown('<div class="lab-cell" style="margin-top:-16px">Ash</div>', unsafe_allow_html=True)
-        with in_c:  bc_Ash = st.number_input("Ash_bc", min_value=0.0, max_value=100.0, value=10.0, step=0.1, format="%.2f", label_visibility="collapsed")
-        with u_c:   st.markdown('<div class="unit-cell" style="margin-top:-16px;padding-left:12px">wt%</div>', unsafe_allow_html=True)
+    if _rdown:
+        st.markdown('<div style="margin-top:15px"></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            for i, col in enumerate(_rdown):
+                if i > 0:
+                    st.markdown('<div style="margin-top:4px"></div>', unsafe_allow_html=True)
+                _input_vals[col] = _render_num_input(col)
 
 
 # ────────────────── PREDICTION SECTION ──────────────────
@@ -941,14 +959,11 @@ if run_clicked:
                  f"Valid Types: {', '.join(_type_map.keys())}")
     else:
         # ② 构建特征行（列名 & 顺序与模型训练代码完全一致）
-        all_vals = {
-            "Type": float(_type_map[biomass_type]),
-            "T": temp, "RT": time_, "SLR": ratio, "Cycles": float(cycles),
-            "C": el_C, "H": el_H, "O": el_O, "N": el_N, "S": el_S,
-            "Protein": pr_Protein, "Lipid": pr_Lipid, "CHO": pr_CHO,
-            "FC": bc_FC, "VM": bc_VM, "Ash": bc_Ash,
-        }
-        # _feat_cols 来自训练数据 Excel（去掉目标列后的全部列名），保证列顺序一致
+        # Type 编码 + 所有数值特征从 _input_vals 获取
+        all_vals = {"Type": float(_type_map[biomass_type])}
+        all_vals.update({c: float(v) for c, v in _input_vals.items()})
+
+        # _feat_cols 来自训练数据 Excel（去掉目标列后的全部列名），保证列顺序与训练完全一致
         if _feat_cols:
             try:
                 ordered = {c: [all_vals[c]] for c in _feat_cols}
