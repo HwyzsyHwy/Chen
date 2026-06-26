@@ -52,12 +52,11 @@ _MIRRORS = [_GH_RAW,
             "https://ghproxy.net/" + _GH_RAW,
             "https://cdn.jsdelivr.net/gh/HwyzsyHwy/Chen@main/"]
 
-# 各目标 → (训练数据文件, 目标列名, 缺失值填充列)
-# HC: 无缺失值填充; AP: RT列中位数填充; CDs: SLR列中位数填充
+# 各目标 → (训练数据文件, 目标列名, 缺失值填充列, pkl模型文件)
 TARGET_CFG = {
-    "Hydrochar Yield":   ("HC20260413.xlsx",  "Yield", None),
-    "Aqueous phase TN":  ("AP20260413.xlsx",  "TN",    "RT"),
-    "QY of carbon dots": ("CDs20260413.xlsx", "QY",    "SLR"),
+    "Hydrochar Yield":   ("HC20260413.xlsx",  "Yield", None,  "HC_Yield_GBDT_best_model.pkl"),
+    "Aqueous phase TN":  ("AP20260413.xlsx",  "TN",    "RT",  "AP_TN_GBDT_best_model.pkl"),
+    "QY of carbon dots": ("CDs20260413.xlsx", "QY",    "SLR", "CDs_QY_GBDT_best_model.pkl"),
 }
 
 RANDOM_STATE = 52  # 与训练代码完全一致
@@ -85,7 +84,7 @@ def _load_type_info(target):
     feature_cols : 特征列名列表（已去掉目标列，含 Type）
     若下载失败/文件损坏，返回 ([], {}, []) 让上层使用 fallback。
     """
-    xlsx, ycol, _ = TARGET_CFG[target]
+    xlsx, ycol, _, _ = TARGET_CFG[target]
     local = _ensure_file(xlsx)
     if not local.exists() or local.stat().st_size < 5000:
         return [], {}, []
@@ -111,7 +110,7 @@ def _load_feature_stats(target):
     返回各数值特征的 {col: (min, max, median)} 字典，用于设置输入框范围和默认值。
     统计基于整个数据集（与训练代码一致：用户看到的是原始数据范围）。
     """
-    xlsx, ycol, _ = TARGET_CFG[target]
+    xlsx, ycol, _, _ = TARGET_CFG[target]
     local = _ensure_file(xlsx)
     if not local.exists() or local.stat().st_size < 5000:
         return {}
@@ -130,46 +129,31 @@ def _load_feature_stats(target):
     return stats
 
 
-@st.cache_resource(show_spinner="Training model...")
-def _train_model(target):
+@st.cache_resource(show_spinner="Loading model...")
+def _load_model(target):
     """
-    按照模型训练代码完全一致的流程，在线训练 GBDT 模型并缓存。
-    流程：加载数据 → Type编码 → 划分(test_size=0.2, random_state=52)
-         → 缺失值填充(仅用训练集中位数) → StandardScaler + GBDT Pipeline → fit
+    直接加载已训练好的 Optuna 优化 GBDT pkl 模型。
+    同时计算缺失值填充中位数（与训练流程一致）。
     """
-    xlsx, ycol, fill_col = TARGET_CFG[target]
-    local = _ensure_file(xlsx)
-    df = pd.read_excel(str(local))
+    xlsx, ycol, fill_col, pkl_name = TARGET_CFG[target]
+    # 下载并加载 pkl
+    pkl_local = _ensure_file(pkl_name)
+    model = joblib.load(str(pkl_local))
 
-    X = df.drop(ycol, axis=1)
-    y = df[ycol]
-
-    # Type 编码（与训练代码完全一致：dict.fromkeys保持首次出现顺序，从1开始）
-    categories = list(dict.fromkeys(X['Type']))
-    type_mapping = {cat: idx + 1 for idx, cat in enumerate(categories)}
-    X = X.copy()
-    X['Type'] = X['Type'].map(type_mapping)
-
-    # 划分（与训练代码完全一致）
-    X_train_val, X_test, y_train_val, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=RANDOM_STATE
-    )
-
-    # 缺失值填充（与训练代码完全一致：仅用训练集中位数）
+    # 计算缺失值填充中位数（与训练代码一致：仅用训练集中位数）
+    fill_median = None
     if fill_col:
+        data_local = _ensure_file(xlsx)
+        df = pd.read_excel(str(data_local))
+        X = df.drop(ycol, axis=1)
+        categories = list(dict.fromkeys(X['Type']))
+        type_mapping = {cat: idx + 1 for idx, cat in enumerate(categories)}
+        X = X.copy()
+        X['Type'] = X['Type'].map(type_mapping)
+        X_train_val, _, _, _ = train_test_split(X, df[ycol], test_size=0.2, random_state=RANDOM_STATE)
         fill_median = X_train_val[fill_col].median()
-        X_train_val = X_train_val.copy()
-        X_train_val[fill_col] = X_train_val[fill_col].fillna(fill_median)
 
-    # 训练 Pipeline（与训练代码完全一致：StandardScaler + GradientBoostingRegressor）
-    model = Pipeline([
-        ('pre', StandardScaler()),
-        ('reg', GradientBoostingRegressor(random_state=RANDOM_STATE))
-    ])
-    model.fit(X_train_val, y_train_val)
-
-    # 返回模型和缺失值填充中位数
-    return model, (fill_median if fill_col else None)
+    return model, fill_median
 
 # ────────────────── CSS ──────────────────
 st.markdown(f"""<style>
@@ -954,7 +938,7 @@ if reset_clicked:
 
 if run_clicked:
     cur_target = st.session_state.target
-    xlsx_name, ycol, fill_col = TARGET_CFG[cur_target]
+    xlsx_name, ycol, fill_col, pkl_name = TARGET_CFG[cur_target]
 
     # ① Type 验证
     if biomass_type not in _type_map:
@@ -979,9 +963,9 @@ if run_clicked:
         else:
             features = pd.DataFrame([all_vals])
 
-        # ③ 在线训练模型 & 预测（完全复现训练代码流程，避免pkl版本不兼容）
+        # ③ 加载已训练好的 Optuna 优化 GBDT 模型进行预测
         try:
-            model, _ = _train_model(cur_target)
+            model, _ = _load_model(cur_target)
             pred = float(model.predict(features)[0])
             st.session_state.result = pred
             st.rerun()
