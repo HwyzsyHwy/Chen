@@ -48,12 +48,22 @@ _MIRRORS = [_GH_RAW,
             "https://ghproxy.net/" + _GH_RAW,
             "https://cdn.jsdelivr.net/gh/HwyzsyHwy/Chen@main/"]
 
-# 各目标 → (训练数据文件, 模型文件, 目标列名)
+# 各目标 → (训练数据文件, 模型文件前缀, 目标列名)
 TARGET_CFG = {
-    "Hydrochar Yield":   ("HC20260413.xlsx",  "HC_Yield_GBDT_best_model.pkl",  "Yield"),
-    "Aqueous phase TN":  ("AP20260413.xlsx",  "AP_TN_GBDT_best_model.pkl",     "TN"),
-    "QY of carbon dots": ("CDs20260413.xlsx", "CDs_QY_GBDT_best_model.pkl",    "QY"),
+    "Hydrochar Yield":   ("HC20260413.xlsx",  "HC_Yield",  "Yield"),
+    "Aqueous phase TN":  ("AP20260413.xlsx",  "AP_TN",     "TN"),
+    "QY of carbon dots": ("CDs20260413.xlsx", "CDs_QY",    "QY"),
 }
+
+def _find_model_file(prefix):
+    """按模型训练代码的命名规则搜索 pkl 文件: {prefix}_{ModelName}_best_model.pkl"""
+    import glob
+    pattern = str(_APP_DIR / f"{prefix}_*_best_model.pkl")
+    found = glob.glob(pattern)
+    if found:
+        return pathlib.Path(found[0]).name
+    # fallback: 尝试从 GitHub 下载 GBDT 版本
+    return f"{prefix}_GBDT_best_model.pkl"
 
 def _ensure_file(fname):
     """下载文件到 _APP_DIR，已存在则跳过"""
@@ -884,7 +894,7 @@ if reset_clicked:
 
 if run_clicked:
     cur_target = st.session_state.target
-    xlsx_name, model_file, _ = TARGET_CFG[cur_target]
+    xlsx_name, model_prefix, ycol = TARGET_CFG[cur_target]
 
     # ① Type 验证
     if biomass_type not in _type_map:
@@ -892,28 +902,29 @@ if run_clicked:
                  f"training data for **{cur_target}**. Prediction is not possible.\n\n"
                  f"Valid Types: {', '.join(_type_map.keys())}")
     else:
-        # ② 构建特征行（列顺序与训练数据完全一致）
-        raw_vals = {
-            "Type": _type_map[biomass_type],   # 数值编码，从 1 开始
-            "Temperature": temp, "Time": time_, "Solid-liquid ratio": ratio,
+        # ② 构建特征行（列名 & 顺序与模型训练代码完全一致）
+        # 训练代码中：Type → dict.fromkeys 顺序编码（从1开始），其余列名即Excel原始列名
+        all_vals = {
+            "Type": float(_type_map[biomass_type]),   # 数值编码，从 1 开始
+            "T": temp, "RT": time_, "SLR": ratio, "Cycles": float(cycles),
             "C": el_C, "H": el_H, "O": el_O, "N": el_N, "S": el_S,
-            "Moisture": pr_M, "Ash": pr_Ash, "VM": pr_VM, "FC": pr_FC,
-            "Cellulose": bc_CL, "Hemicellulose": bc_HC, "Lignin": bc_LG,
-            "Lipid": bc_LP, "Protein": bc_PR,
+            "Protein": pr_Protein, "Lipid": pr_Lipid, "CHO": pr_CHO,
+            "FC": bc_FC, "VM": bc_VM, "Ash": bc_Ash,
         }
-        # 按训练数据列顺序排列；如果列名不完全匹配则退回固定顺序
+        # _feat_cols 来自训练数据 Excel（去掉目标列后的全部列名），保证列顺序一致
         if _feat_cols:
             try:
-                ordered = [raw_vals[c] for c in _feat_cols]
-            except KeyError:
-                # 列名可能不同——用 positional fallback
-                ordered = list(raw_vals.values())
+                ordered = {c: [all_vals[c]] for c in _feat_cols}
+            except KeyError as e:
+                st.error(f"⚠️ Feature column mismatch: {e}. "
+                         f"Expected columns: {_feat_cols}")
+                st.stop()
+            features = pd.DataFrame(ordered)
         else:
-            ordered = list(raw_vals.values())
+            features = pd.DataFrame([all_vals])
 
-        features = np.array([ordered])
-
-        # ③ 加载模型 & 预测
+        # ③ 查找并加载模型 & 预测
+        model_file = _find_model_file(model_prefix)
         model_path = _APP_DIR / model_file
         if not model_path.exists():
             _ensure_file(model_file)   # 尝试从 GitHub 下载
