@@ -993,8 +993,8 @@ with col_R:
 # 各目标预测值的单位
 _RESULT_UNIT = {
     "Hydrochar Yield":   "%",
-    "Aqueous phase TN":  "%",
-    "QY of carbon dots": "g/L",
+    "Aqueous phase TN":  "g/L",
+    "QY of carbon dots": "%",
 }
 with st.container(border=False):
     pred_L, pred_R = st.columns([3, 1])
