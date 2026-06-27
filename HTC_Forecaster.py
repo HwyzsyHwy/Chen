@@ -84,6 +84,31 @@ BEST_PARAMS = {
 
 RANDOM_STATE = 52  # 与训练代码完全一致
 
+# ── 每个模型训练时的特征列顺序（不含 Type 与目标列；Type 始终在首位）──
+# 来源：各模型训练数据 Excel 的列顺序，与「模型训练代码.py」读取顺序完全一致。
+# HC / AP 含 Cycles；CDs 不含 Cycles。Type 在最前，目标列(Yield/TN/QY)在最后。
+FEATURE_ORDER = {
+    "Hydrochar Yield":   ["Type", "C", "H", "O", "N", "S", "Ash", "Protein",
+                          "Lipid", "CHO", "FC", "VM", "T", "RT", "SLR", "Cycles"],
+    "Aqueous phase TN":  ["Type", "C", "H", "O", "N", "S", "Ash", "Protein",
+                          "Lipid", "CHO", "FC", "VM", "T", "RT", "SLR", "Cycles"],
+    "QY of carbon dots": ["Type", "C", "H", "O", "N", "S", "Ash", "Protein",
+                          "Lipid", "CHO", "FC", "VM", "T", "RT", "SLR"],
+}
+
+# ── 每个模型的 Type 类别规范清单（仅在 Excel 下载失败时作 UI 兜底）──
+# 顺序与各模型训练编码（dict.fromkeys 首次出现顺序，从 1 开始）一致。
+# HC / AP 共用一套 8 类；CDs 为另一套 7 类，类别体系完全不同。
+TYPE_CATALOG = {
+    "Hydrochar Yield":   ["straw", "wood", "manure", "food waste",
+                          "sewage sludge", "algae", "by-product", "mixed"],
+    "Aqueous phase TN":  ["straw", "wood", "manure", "food waste",
+                          "sewage sludge", "algae", "by-product", "mixed"],
+    "QY of carbon dots": ["straw", "fruit & peel", "by-product", "wood",
+                          "algae", "leaves & petals", "seeds"],
+}
+
+
 def _ensure_file(fname):
     """下载文件到 _APP_DIR，已存在则跳过"""
     local = _APP_DIR / fname
@@ -173,6 +198,12 @@ def _load_model(target):
     type_mapping = {cat: idx + 1 for idx, cat in enumerate(categories)}
     X = X.copy()
     X['Type'] = X['Type'].map(type_mapping)
+
+    # 显式按训练时的特征列顺序重排，确保与「模型训练代码.py」完全一致
+    order = [c for c in FEATURE_ORDER[target] if c in X.columns]
+    # 兜底：补上定义中遗漏但 Excel 实际存在的列（保持其原始相对位置）
+    order += [c for c in X.columns if c not in order]
+    X = X[order]
 
     # 划分（与训练代码完全一致）
     X_train_val, X_test, y_train_val, y_test = train_test_split(
@@ -843,10 +874,13 @@ with tc3:
 # 根据当前目标加载对应训练数据的 Type 列表和特征统计
 _type_list, _type_map, _feat_cols = _load_type_info(st.session_state.target)
 _fstats = _load_feature_stats(st.session_state.target)
+# Excel 下载失败时，用各模型专属的规范 Type 清单兜底（HC/AP 共用8类，CDs 为7类）
 if not _type_list:
-    _type_list = ["Food waste","Sewage sludge","Livestock manure",
-                  "Crop straw","Woody biomass","Algae","Other"]
+    _type_list = TYPE_CATALOG[st.session_state.target]
     _type_map  = {c: i+1 for i,c in enumerate(_type_list)}
+# 特征列顺序同样兜底为各模型训练时的列顺序
+if not _feat_cols:
+    _feat_cols = FEATURE_ORDER[st.session_state.target]
 
 # 单位映射
 _UNITS = {"T":"°C","RT":"h","SLR":"g/mL","Cycles":"times",
@@ -992,17 +1026,17 @@ if run_clicked:
         all_vals = {"Type": float(_type_map[biomass_type])}
         all_vals.update({c: float(v) for c, v in _input_vals.items()})
 
-        # _feat_cols 来自训练数据 Excel（去掉目标列后的全部列名），保证列顺序与训练完全一致
-        if _feat_cols:
-            try:
-                ordered = {c: [all_vals[c]] for c in _feat_cols}
-            except KeyError as e:
-                st.error(f"⚠️ Feature column mismatch: {e}. "
-                         f"Expected columns: {_feat_cols}")
-                st.stop()
-            features = pd.DataFrame(ordered)
-        else:
-            features = pd.DataFrame([all_vals])
+        # 按训练时的特征列顺序构造（与 _load_model 中的重排逻辑完全一致）
+        _train_order = [c for c in FEATURE_ORDER[cur_target] if c in all_vals]
+        # 兜底：补上 _feat_cols 中存在但未列入 FEATURE_ORDER 的列
+        _train_order += [c for c in _feat_cols if c not in _train_order and c in all_vals]
+        try:
+            ordered = {c: [all_vals[c]] for c in _train_order}
+        except KeyError as e:
+            st.error(f"⚠️ Feature column mismatch: {e}. "
+                     f"Expected columns: {_train_order}")
+            st.stop()
+        features = pd.DataFrame(ordered)
 
         # ③ 加载已训练好的 Optuna 优化 GBDT 模型进行预测
         try:
