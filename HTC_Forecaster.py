@@ -990,11 +990,18 @@ with col_R:
 
 
 # ────────────────── PREDICTION SECTION ──────────────────
+# 各目标预测值的单位
+_RESULT_UNIT = {
+    "Hydrochar Yield":   "%",
+    "Aqueous phase TN":  "%",
+    "QY of carbon dots": "g/L",
+}
 with st.container(border=False):
     pred_L, pred_R = st.columns([3, 1])
     with pred_L:
         if st.session_state.result is not None:
-            val = f"{st.session_state.target}: {st.session_state.result:.4f}"
+            _unit = _RESULT_UNIT.get(st.session_state.target, "")
+            val = f"{st.session_state.target}: {st.session_state.result:.4f} {_unit}"
         else:
             val = ""
         st.markdown(f'''<div class="pred-left pred-marker">
